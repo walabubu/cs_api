@@ -46,16 +46,13 @@ do_process_request(_Request, _OutputFormat) ->
     {error, <<"request must contain 'tasks' field">>}.
 
 create_vertices(Graph, Tasks) ->
-    Root = digraph:add_vertex(Graph, digraph:add_vertex(Graph),
-        [root, undefined, []]),
+    Root = add_vertex(Graph, [root, undefined, []]),
     {Vertices, ByName} = lists:mapfoldl(
         fun(#{<<"name">> := Name, <<"command">> := Command} = Task, Index) ->
             case maps:get(Name, Index, undefined) of
                 undefined ->
                     Deps = maps:get(<<"requires">>, Task, [root]),
-                    Label = [Name, Command, Deps],
-                    Vertex = digraph:add_vertex(Graph,
-                        digraph:add_vertex(Graph), Label),
+                    Vertex = add_vertex(Graph, [Name, Command, Deps]),
                     {Vertex, Index#{Name => Vertex}};
                 _ ->
                     abort(<<"duplicate task name: ", Name/binary>>)
@@ -82,6 +79,9 @@ create_edges(Graph, ByName, Vertices) ->
                 Deps)
         end,
         Vertices).
+
+add_vertex(Graph, Label) ->
+    digraph:add_vertex(Graph, digraph:add_vertex(Graph), Label).
 
 resolve_dependency(DepName, ByName) ->
     case maps:get(DepName, ByName, undefined) of
