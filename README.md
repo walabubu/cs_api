@@ -18,7 +18,7 @@ Test
 Run
 -----
 
-This will start the service in Erlang shell. By default the service listens at port 8000. You can modify [erl.config](erl.config) to use a different port number.
+This will start the service in Erlang shell. By default the service listens at port 8000. You can modify [httpd.config](httpd.config) to use a different port number.
 
     $ make shell
 
