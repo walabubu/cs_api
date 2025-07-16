@@ -11,16 +11,10 @@
 
 handle(SessionID, Env, {_, Body}) ->
     Path = proplists:get_value(path_info, Env),
-    OutputFormat = case parse_path(Path) of
-        []       -> json;
-        ["json"] -> json;
-        ["bash"] -> bash;
-        _        -> invalid        
-    end,
-    case OutputFormat of
+    case get_format(parse_path(Path)) of
         invalid ->
             bad_request(SessionID, "Invalid output format: " ++ Path);
-        _ ->
+        OutputFormat ->
             try
                 Request = json:decode(list_to_binary(Body)),
                 case cs_api:process_request(Request, OutputFormat) of
@@ -43,10 +37,13 @@ handle(SessionID, _Env, _Input) ->
 %% Internal functions
 %%==============================================================================
 
-parse_path(undefined) ->
-	[];
-parse_path(Path) ->
-    lists:delete([], string:split(Path, "/", all)).
+parse_path(undefined) -> [];
+parse_path(Path)      -> lists:delete([], string:split(Path, "/", all)).
+
+get_format(["bash"]) -> bash;
+get_format(["json"]) -> json;
+get_format([])       -> json;
+get_format(_)        -> invalid.
 
 %% HTTP response building helpers
 
