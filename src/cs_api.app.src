@@ -5,9 +5,10 @@
     {mod, {cs_api_app, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        inets
     ]},
-    {env, [{port, 8000}]},
+    {env, []},
     {modules, []},
     {licenses, []},
     {links, []}
