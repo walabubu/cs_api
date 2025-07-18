@@ -29,8 +29,8 @@ process_request(Request, OutputFormat) ->
     try
         do_process_request(Request, OutputFormat)
     catch
-        throw:{error, _} = Error -> Error%;
-        %_:_ -> {error, <<"internal error">>}
+        throw:{error, _} = Error -> Error;
+        _:_ -> {error, <<"internal error">>}
     end.
 
 %%==============================================================================
