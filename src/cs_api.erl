@@ -29,15 +29,16 @@ process_request(Request, OutputFormat) ->
     try
         do_process_request(Request, OutputFormat)
     catch
-        throw:{error, _} = Error -> Error;
-        _:_ -> {error, <<"internal error">>}
+        throw:{error, _} = Error -> Error%;
+        %_:_ -> {error, <<"internal error">>}
     end.
 
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
 
-do_process_request(#{<<"tasks">> := Tasks}, OutputFormat) ->
+do_process_request(#{<<"tasks">> := Tasks} = Request, OutputFormat) ->
+    Request = check_for_unrecognized_fields([<<"tasks">>], Request),
     Graph = digraph:new([acyclic, private]),
     {[Root | _] = Vertices, ByName} = create_vertices(Graph, Tasks),
     ok = create_edges(Graph, ByName, Vertices),
@@ -48,11 +49,12 @@ do_process_request(_Request, _OutputFormat) ->
 create_vertices(Graph, Tasks) ->
     Root = add_vertex(Graph, [root, undefined, []]),
     {Vertices, ByName} = lists:mapfoldl(
-        fun(#{<<"name">> := Name, <<"command">> := Command} = Task, Index) ->
+        fun(Task, Index) ->
+            #{<<"name">> := Name, <<"command">> := Cmd} = validate_task(Task),
             case maps:get(Name, Index, undefined) of
                 undefined ->
                     Deps = maps:get(<<"requires">>, Task, [root]),
-                    Vertex = add_vertex(Graph, [Name, Command, Deps]),
+                    Vertex = add_vertex(Graph, [Name, Cmd, Deps]),
                     {Vertex, Index#{Name => Vertex}};
                 _ ->
                     abort(<<"duplicate task name: ", Name/binary>>)
@@ -60,6 +62,23 @@ create_vertices(Graph, Tasks) ->
         end,
         #{}, Tasks),
     {[Root | Vertices], ByName#{root => Root}}.
+
+validate_task(#{<<"name">> := _, <<"command">> := _} = Task) ->
+    check_for_unrecognized_fields([<<"name">>, <<"command">>, <<"requires">>],
+        Task);
+validate_task(#{<<"name">> := _}) ->
+    abort(<<"task must contain 'command' field">>);
+validate_task(#{<<"command">> := _}) ->
+    abort(<<"task must contain 'name' field">>).
+
+check_for_unrecognized_fields(ValidFields, Object) ->
+    case maps:without(ValidFields, Object) of
+        Empty when Empty =:= #{} -> Object;
+        M -> abort(iolist_to_binary([
+            "unrecognized field(s): ",
+            lists:join(", ", maps:keys(M))
+        ]))
+    end.
 
 create_edges(Graph, ByName, Vertices) ->
     lists:foreach(
@@ -226,6 +245,62 @@ abort(Message) ->
     }
 ">>).
 
+-define(JSON_REQ_NO_TASKS, <<"{}">>).
+
+-define(JSON_REQ_EXTRA_FIELDS, <<"
+    {
+        \"tasks\": [
+            {
+                \"name\": \"task-1\",
+                \"command\": \"touch /tmp/file1\"
+            }
+        ],
+        \"mumbo\": [
+            {
+                \"name\": \"value\"
+            }
+        ],
+        \"jumbo\": [
+            {
+                \"name\": \"value\"
+            }
+        ]
+    }
+">>).
+
+-define(JSON_TASK_NO_NAME, <<"
+    {
+        \"tasks\": [
+            {
+                \"command\": \"touch /tmp/file1\"
+            }
+        ]
+    }
+">>).
+
+-define(JSON_TASK_NO_COMMAND, <<"
+    {
+        \"tasks\": [
+            {
+                \"name\": \"task-1\"
+            }
+        ]
+    }
+">>).
+
+-define(JSON_TASK_EXTRA_FIELDS, <<"
+    {
+        \"tasks\": [
+            {
+                \"name\": \"task-1\",
+                \"command\": \"touch /tmp/file1\",
+                \"mumbo\": \"mumbo value\",
+                \"jumbo\": \"jumbo value\"
+            }
+        ]
+    }
+">>).
+
 -define(BASIC_JSON_OUT, <<
     "{"
         "\"tasks\":["
@@ -273,7 +348,8 @@ all_test_() ->
             {"test basic example - bash output", fun test_basic_bash/0},
             {"test cycle", fun test_cycle/0},
             {"test unknown dependency name", fun test_unknown_dep/0},
-            {"test duplicate task name", fun test_dupe/0}
+            {"test duplicate task name", fun test_dupe/0},
+            {"test malformed request", fun test_malformed/0}
         ]
     }.
 
@@ -301,5 +377,22 @@ test_dupe() ->
     ?assertEqual(
         {error, <<"duplicate task name: task-1">>},
         process_request(json:decode(?JSON_DUPE), bash)).
+
+test_malformed() ->
+    ?assertEqual(
+        {error, <<"request must contain 'tasks' field">>},
+        process_request(json:decode(?JSON_REQ_NO_TASKS), bash)),
+    ?assertEqual(
+        {error, <<"unrecognized field(s): jumbo, mumbo">>},
+        process_request(json:decode(?JSON_REQ_EXTRA_FIELDS), bash)),
+    ?assertEqual(
+        {error, <<"task must contain 'name' field">>},
+        process_request(json:decode(?JSON_TASK_NO_NAME), bash)),
+    ?assertEqual(
+        {error, <<"task must contain 'command' field">>},
+        process_request(json:decode(?JSON_TASK_NO_COMMAND), bash)),
+    ?assertEqual(
+        {error, <<"unrecognized field(s): jumbo, mumbo">>},
+        process_request(json:decode(?JSON_TASK_EXTRA_FIELDS), bash)).
 
 -endif. %% TEST
